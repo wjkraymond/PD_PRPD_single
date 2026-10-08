@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PRPD Formation Laboratory: 2D & 3D Pulse-by-Pulse Simulator</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Three.js CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- OrbitControls for Three.js -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              400: '#38bdf8',
+              500: '#0284c7',
+              600: '#0369a1',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600;700&display=swap');
+    body {
+      font-family: 'Inter', sans-serif;
+      user-select: none;
+    }
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.6);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(51, 65, 85, 0.7);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(100, 116, 139, 0.9);
+    }
+    .jet-bar {
+      background: linear-gradient(to top, #00008f, #0000ff, #0077ff, #00e1ff, #73ff8c, #ffee00, #ff7700, #e10000, #7b0000);
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col antialiased">
+
+  <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-50 px-4 py-2.5 flex items-center justify-between">
+    <div class="flex items-center space-x-3">
+      <div class="w-9 h-9 rounded-lg bg-sky-500/20 text-sky-400 border border-sky-500/30 flex items-center justify-center shadow-inner">
+        <i data-lucide="activity" class="w-5 h-5"></i>
+      </div>
+      <div>
+        <h1 class="font-bold text-sm sm:text-base text-slate-100 flex items-center gap-2">
+          How PRPD Patterns Form: Pulse-by-Pulse Simulation
+          <span class="text-[11px] font-mono px-2 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-800">IEC 60270</span>
+        </h1>
+        <p class="text-xs text-slate-400 hidden sm:block">Dynamic Phase-Resolved Partial Discharge (&phi; - q - n) 2D & 3D Accumulation</p>
+      </div>
+    </div>
+
+    <!-- Active Defect Mechanism Selector -->
+    <div class="flex items-center gap-2 text-xs">
+      <span class="text-slate-400 font-medium hidden md:inline">Defect Type:</span>
+      <select id="defect-select" onchange="changeDefect(this.value)" class="bg-slate-800 border border-slate-700 text-sky-300 rounded-lg px-2.5 py-1.5 font-medium focus:ring-1 focus:ring-sky-500 cursor-pointer">
+        <option value="void">Internal Void (Dielectric Cavity)</option>
+        <option value="corona">Corona Discharge (Sharp Point / Air)</option>
+        <option value="surface">Surface Tracking (Interface Barrier)</option>
+      </select>
+
+      <button onclick="toggleHelpModal()" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-slate-300 hover:text-white transition flex items-center gap-1">
+        <i data-lucide="help-circle" class="w-4 h-4 text-sky-400"></i>
+        <span class="hidden sm:inline">Concept</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="flex-1 grid grid-cols-12 gap-3 p-3 overflow-hidden">
+    
+    <!-- LEFT PANEL: Top Oscilloscope & PRPD Visualizations -->
+    <div class="col-span-12 lg:col-span-8 flex flex-col gap-3">
+      
+      <!-- Time Domain AC Test Waveform & Live Pulse Scope -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 shadow-lg relative flex flex-col">
+        <div class="flex items-center justify-between mb-1.5 text-xs">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
+            <span class="font-bold text-slate-300 uppercase tracking-wide">Time Domain: Live AC Test Voltage (50 Hz / 20 ms Period)</span>
+          </div>
+          <div class="flex items-center gap-3 font-mono text-[11px] text-slate-400">
+            <span>Cycle: <strong id="scope-cycle-num" class="text-amber-400">1</strong></span>
+            <span>Current Phase &phi;: <strong id="scope-curr-phase" class="text-sky-300">0.0&deg;</strong></span>
+          </div>
+        </div>
+
+        <div class="h-28 w-full bg-slate-950 rounded-lg border border-slate-800 relative overflow-hidden">
+          <canvas id="scopeCanvas" class="w-full h-full"></canvas>
+          <div id="scope-badge" class="absolute top-2 right-2 px-2 py-0.5 rounded bg-slate-900/80 border border-slate-700 text-[10px] font-mono text-amber-300">
+            Yellow: V(t) AC Sine | Cyan: Discharge Impulses
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3 flex-1 min-h-[380px]">
+        
+        <!-- 2D PRPD Canvas with Jet Colormap -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 shadow-lg flex flex-col relative">
+          <div class="flex items-center justify-between mb-2 text-xs">
+            <div class="flex items-center gap-1.5">
+              <i data-lucide="grid" class="w-4 h-4 text-sky-400"></i>
+              <span class="font-bold text-slate-200">2D PRPD: Phase vs Charge (&phi; - q)</span>
+            </div>
+            <span class="font-mono text-[10px] bg-slate-800 text-sky-300 px-2 py-0.5 rounded border border-slate-700">Jet Colormap (Count n)</span>
+          </div>
+
+          <div class="flex-1 relative flex items-center justify-center bg-slate-950 rounded-lg border border-slate-800 overflow-hidden">
+            <canvas id="prpd2dCanvas" class="w-full h-full"></canvas>
+            
+            <!-- Jet Colormap Vertical Legend -->
+            <div class="absolute right-2 top-3 bottom-8 w-11 bg-slate-900/90 border border-slate-800 rounded p-1 flex flex-col items-center justify-between text-[9px] font-mono shadow-md">
+              <span class="text-rose-400 font-bold" id="jet-legend-max">10+</span>
+              <div class="w-3 h-full my-1 rounded-sm jet-bar"></div>
+              <span class="text-sky-400 font-bold">1</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3D PRPD Surface / Column Canvas (Three.js) -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 shadow-lg flex flex-col relative">
+          <div class="flex items-center justify-between mb-2 text-xs">
+            <div class="flex items-center gap-1.5">
+              <i data-lucide="box" class="w-4 h-4 text-rose-400"></i>
+              <span class="font-bold text-slate-200">3D PRPD: Repetition Rate (&phi; - q - n)</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <button onclick="reset3DCamera()" class="text-[10px] bg-slate-800 hover:bg-slate-700 px-2 py-0.5 rounded text-slate-300 border border-slate-700 transition" title="Reset View Angle">
+                Reset View
+              </button>
+            </div>
+          </div>
+
+          <div id="threeContainer" class="flex-1 relative bg-slate-950 rounded-lg border border-slate-800 overflow-hidden cursor-grab active:cursor-grabbing">
+            <!-- Three.js Canvas injected dynamically -->
+            <div class="absolute bottom-2 left-2 bg-slate-900/85 backdrop-blur px-2 py-1 rounded text-[10px] font-mono text-slate-400 border border-slate-800 pointer-events-none">
+              &bull; Left Drag: Rotate &bull; Scroll: Zoom &bull; Right Drag: Pan
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Interactive Playback Toolbar & Formation Controls -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-xs shadow-lg">
+        <div class="flex items-center gap-2">
+          <!-- Play / Pause -->
+          <button id="btn-play" onclick="togglePlayPause()" class="px-3.5 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-semibold flex items-center gap-1.5 shadow transition">
+            <i data-lucide="play" class="w-4 h-4" id="play-icon"></i>
+            <span id="play-text">Start Sim</span>
+          </button>
+          
+          <!-- Step 1 Pulse -->
+          <button onclick="stepSinglePulse()" class="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-medium flex items-center gap-1.5 transition">
+            <i data-lucide="step-forward" class="w-3.5 h-3.5 text-sky-400"></i>
+            <span>+1 Pulse</span>
+          </button>
+
+          <!-- Step 1 Cycle -->
+          <button onclick="stepSingleCycle()" class="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-medium flex items-center gap-1.5 transition">
+            <i data-lucide="fast-forward" class="w-3.5 h-3.5 text-amber-400"></i>
+            <span>+1 Cycle (20ms)</span>
+          </button>
+
+          <!-- Reset -->
+          <button onclick="resetSimulation()" class="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-400 hover:text-slate-200 transition">
+            Reset
+          </button>
+        </div>
+
+        <!-- Speed Throttle -->
+        <div class="flex items-center gap-3">
+          <span class="text-slate-400 font-medium">Speed:</span>
+          <div class="flex items-center gap-1.5 font-mono text-xs">
+            <button onclick="setSpeed(1)" id="spd-1" class="px-2 py-1 rounded bg-slate-800 text-slate-300 hover:bg-slate-700">Slow (Step)</button>
+            <button onclick="setSpeed(5)" id="spd-5" class="px-2 py-1 rounded bg-sky-600 text-white font-bold">Medium</button>
+            <button onclick="setSpeed(25)" id="spd-25" class="px-2 py-1 rounded bg-slate-800 text-slate-300 hover:bg-slate-700">Fast</button>
+          </div>
+        </div>
+
+        <!-- Pulse Count Gauge -->
+        <div class="font-mono text-xs flex items-center gap-2">
+          <span class="text-slate-400">Total Pulses (N):</span>
+          <span id="stat-total-pulses" class="text-sky-300 font-bold bg-sky-950 px-2 py-0.5 rounded border border-sky-800">0</span>
+        </div>
+      </div>
+
+    </div>
+
+    <aside class="col-span-12 lg:col-span-4 flex flex-col gap-3 overflow-y-auto max-h-[calc(100vh-4.5rem)]">
+      
+      <!-- Live Step Telemetry Card -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg space-y-3">
+        <h2 class="text-xs font-bold text-sky-400 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-800 pb-2">
+          <i data-lucide="zap" class="w-4 h-4"></i> Instantaneous Pulse Telemetry
+        </h2>
+
+        <div class="grid grid-cols-2 gap-2 text-xs font-mono">
+          <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+            <div class="text-[10px] text-slate-500 uppercase">Phase Angle (&phi;)</div>
+            <div id="telem-phase" class="text-lg font-bold text-amber-400">-- &deg;</div>
+          </div>
+          <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+            <div class="text-[10px] text-slate-500 uppercase">Charge (q)</div>
+            <div id="telem-charge" class="text-lg font-bold text-sky-400">-- pC</div>
+          </div>
+        </div>
+
+        <!-- Step-by-Step Educational Callout Box -->
+        <div class="bg-sky-950/30 border border-sky-800/40 rounded-lg p-3 text-xs leading-relaxed space-y-1.5">
+          <div class="font-bold text-sky-300 flex items-center gap-1.5">
+            <i data-lucide="info" class="w-3.5 h-3.5 text-sky-400"></i> How the PRPD Bin Updates:
+          </div>
+          <p id="telem-explanation" class="text-slate-300 text-[11px]">
+            Press <strong>"Start Sim"</strong> or <strong>"+1 Pulse"</strong> to watch the discharge event travel from the time-domain waveform into the PRPD histogram grid.
+          </p>
+        </div>
+      </div>
+
+      <!-- Colorjet Color Scale Mechanism Explanation -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg text-xs space-y-2.5">
+        <h3 class="font-bold text-slate-200 flex items-center gap-1.5">
+          <i data-lucide="palette" class="w-4 h-4 text-teal-400"></i> The Jet Colormap Scale (Count n)
+        </h3>
+        
+        <p class="text-slate-400 leading-normal text-[11px]">
+          In a PRPD plot, hundreds or thousands of power cycles are superimposed. Because multiple discharges frequently land at almost the exact same phase angle and charge magnitude, we divide the canvas into discrete 2D bins:
+        </p>
+
+        <div class="p-2.5 bg-slate-950 rounded-lg border border-slate-800 space-y-1.5 font-mono text-[10px]">
+          <div class="flex items-center gap-2">
+            <span class="w-3 h-3 rounded-full bg-[#0000ff]"></span>
+            <span class="text-slate-300"><strong>Blue:</strong> 1 event (Infrequent / single breakdown)</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="w-3 h-3 rounded-full bg-[#00e1ff]"></span>
+            <span class="text-slate-300"><strong>Cyan / Green:</strong> 2–4 events (Growing recurrence)</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="w-3 h-3 rounded-full bg-[#ffee00]"></span>
+            <span class="text-slate-300"><strong>Yellow:</strong> 5–7 events (Frequent discharge)</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="w-3 h-3 rounded-full bg-[#e10000]"></span>
+            <span class="text-slate-300"><strong>Red / Dark Red:</strong> 8+ events (Maximum repetition rate)</span>
+          </div>
+        </div>
+
+        <p class="text-slate-400 text-[11px] leading-relaxed">
+          In the <strong>3D view</strong>, this repetition count <span class="font-mono text-sky-400">n</span> is projected vertically on the Z-axis, creating a topographical mountain of partial discharge activity.
+        </p>
+      </div>
+
+      <!-- Physics of the Active Defect -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg text-xs space-y-2">
+        <h3 class="font-bold text-slate-200 flex items-center gap-1.5" id="defect-title">
+          <i data-lucide="book-open" class="w-4 h-4 text-amber-400"></i> Cavity Void Defect Physics
+        </h3>
+        <p id="defect-desc" class="text-slate-400 leading-normal text-[11px]">
+          Trapped gas cavities within epoxy or cross-linked polyethylene (XLPE) discharge when the electric field inside the void exceeds Paschen breakdown. Because the capacitive void voltage is in phase with the slope ($\frac{du}{dt}$), discharges cluster symmetrically in the 1st (30&deg;&ndash;90&deg;) and 3rd (210&deg;&ndash;270&deg;) quadrants.
+        </p>
+      </div>
+
+    </aside>
+
+  </main>
+
+  <!-- Help & Concepts Modal -->
+  <div id="helpModal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-xl max-w-lg w-full p-5 shadow-2xl relative text-slate-200 text-xs space-y-3">
+      <button onclick="toggleHelpModal()" class="absolute top-3.5 right-3.5 text-slate-400 hover:text-white p-1">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+
+      <h3 class="font-bold text-sm text-sky-400 flex items-center gap-2">
+        <i data-lucide="graduation-cap" class="w-4 h-4"></i> Understanding PRPD (&phi; - q - n)
+      </h3>
+      <p class="text-slate-300 leading-relaxed">
+        <strong>Partial Discharge (PD)</strong> refers to localized dielectric breakdowns that only partially bridge the insulation between conductors.
+      </p>
+      <div class="space-y-1.5 text-slate-400 font-mono text-[11px]">
+        <div>&bull; <strong>&phi; (Phase Angle):</strong> Instant position in the 0&deg;&ndash;360&deg; power cycle.</div>
+        <div>&bull; <strong>q (Apparent Charge):</strong> Size of the discharge impulse in pC.</div>
+        <div>&bull; <strong>n (Pulse Count):</strong> How many pulses occurred at that exact (&phi;, q) bin.</div>
+      </div>
+      <p class="text-slate-300 leading-relaxed">
+        By watching the animation slowly, students observe how stochastic micro-pulses in time-domain transform cycle-by-cycle into distinct geometric fingerprint shapes.
+      </p>
+      <div class="text-right pt-2 border-t border-slate-800">
+        <button onclick="toggleHelpModal()" class="px-4 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded font-medium">Got it</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Configuration & State
+    let isPlaying = false;
+    let simSpeed = 5; // pulses per frame/tick
+    let currentDefect = 'void';
+    let totalPulseCount = 0;
+    let currentCycle = 1;
+    let currentPhaseAngle = 0; // 0 to 360 degrees
+    let animationReqId = null;
+
+    // PRPD Binning Resolution
+    const PHASE_BINS = 72; // 5 degrees per bin
+    const CHARGE_BINS = 50; // Amplitude bins
+    const MAX_CHARGE_PC = 500; // max Y axis scale
+
+    // 2D Array [phaseIdx][chargeIdx] = count n
+    let histogramGrid = Array.from({ length: PHASE_BINS }, () => new Float32Array(CHARGE_BINS));
+    let maxBinCount = 1;
+
+    // Time-domain Scope trace data
+    const scopePulseQueue = []; // Recently fired pulses for scope animation
+
+    // Canvas references
+    const scopeCanvas = document.getElementById('scopeCanvas');
+    const scopeCtx = scopeCanvas.getContext('2d');
+
+    const prpd2dCanvas = document.getElementById('prpd2dCanvas');
+    const prpd2dCtx = prpd2dCanvas.getContext('2d');
+
+    // Three.js State
+    let scene, camera, renderer, controls;
+    let instancedMesh;
+    const dummy = new THREE.Object3D();
+    const tempColor = new THREE.Color();
+    const TOTAL_VOXELS = PHASE_BINS * CHARGE_BINS;
+
+    /**
+     * Converts a normalized count [0, 1] into classic RGB Jet colormap
+     */
+    function getJetColor(t) {
+      t = Math.max(0, Math.min(1, t));
+      let r = 0, g = 0, b = 0;
+
+      // Jet colormap 4-segment polynomial
+      r = Math.max(0, Math.min(1, 1.5 - Math.abs(t * 4 - 3)));
+      g = Math.max(0, Math.min(1, 1.5 - Math.abs(t * 4 - 2)));
+      b = Math.max(0, Math.min(1, 1.5 - Math.abs(t * 4 - 1)));
+
+      return {
+        r: Math.floor(r * 255),
+        g: Math.floor(g * 255),
+        b: Math.floor(b * 255),
+        css: `rgb(${Math.floor(r * 255)}, ${Math.floor(g * 255)}, ${Math.floor(b * 255)})`
+      };
+    }
+
+    function randomGaussian(mean = 0, stdev = 1) {
+      let u = 1 - Math.random();
+      let v = Math.random();
+      let z = Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+      return z * stdev + mean;
+    }
+
+    /**
+     * Generates a single PD pulse based on the active physical defect mechanism
+     */
+    function sampleDefectPulse(defectType) {
+      let phase = 0;
+      let charge = 0;
+
+      if (defectType === 'void') {
+        // Internal Cavity: 1st & 3rd quadrant clusters (around 45° and 225°)
+        const quadrant = Math.random() < 0.5 ? 1 : 3;
+        const meanPhase = quadrant === 1 ? 55 : 235;
+        phase = (randomGaussian(meanPhase, 15) % 360 + 360) % 360;
+        charge = Math.max(15, randomGaussian(160, 35));
+      } 
+      else if (defectType === 'corona') {
+        // Corona: Negative voltage peak (centered sharply at 270°) with occasional positive pulses
+        const isNeg = Math.random() < 0.88;
+        const meanPhase = isNeg ? 270 : 90;
+        phase = (randomGaussian(meanPhase, 8) % 360 + 360) % 360;
+        charge = Math.max(10, randomGaussian(280, 20)); // tight amplitude band
+      } 
+      else if (defectType === 'surface') {
+        // Surface Tracking: Starts at zero crossings and drags outward
+        const half = Math.random() < 0.5 ? 0 : 180;
+        const offset = Math.abs(randomGaussian(40, 22));
+        phase = (half + offset) % 360;
+        const env = Math.sin((phase % 180) * (Math.PI / 180));
+        charge = Math.max(20, randomGaussian(120 + env * 180, 50));
+      }
+
+      return { phase, charge };
+    }
+
+    function initThreeJS() {
+      const container = document.getElementById('threeContainer');
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+
+      // Scene
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x020617); // Slate-950
+
+      // Camera
+      camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+      camera.position.set(40, 48, 55);
+
+      // Renderer
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(width, height);
+      renderer.setPixelRatio(window.devicePixelRatio || 1);
+      renderer.shadowMap.enabled = true;
+      container.appendChild(renderer.domElement);
+
+      // Controls
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+      controls.target.set(0, 0, 0);
+
+      // Lighting
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+      scene.add(ambientLight);
+
+      const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+      dirLight.position.set(20, 50, 30);
+      scene.add(dirLight);
+
+      // Base Grid & Axis Boundaries
+      const gridHelper = new THREE.GridHelper(50, 10, 0x1e293b, 0x0f172a);
+      gridHelper.position.y = -0.1;
+      scene.add(gridHelper);
+
+      // Instanced Mesh for all bins
+      const boxGeo = new THREE.BoxGeometry(0.6, 1, 0.6);
+      // Center pivot at bottom of box
+      boxGeo.translate(0, 0.5, 0);
+      const boxMat = new THREE.MeshStandardMaterial({
+        roughness: 0.3,
+        metalness: 0.1,
+      });
+
+      instancedMesh = new THREE.InstancedMesh(boxGeo, boxMat, TOTAL_VOXELS);
+      instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      scene.add(instancedMesh);
+
+      // Set initial positions
+      let idx = 0;
+      const phaseSpan = 40;
+      const chargeSpan = 40;
+
+      for (let p = 0; p < PHASE_BINS; p++) {
+        for (let q = 0; q < CHARGE_BINS; q++) {
+          const posX = ((p / PHASE_BINS) - 0.5) * phaseSpan;
+          const posZ = ((q / CHARGE_BINS) - 0.5) * chargeSpan;
+          dummy.position.set(posX, 0, posZ);
+          dummy.scale.set(1, 0.001, 1);
+          dummy.updateMatrix();
+          instancedMesh.setMatrixAt(idx, dummy.matrix);
+          instancedMesh.setColorAt(idx, new THREE.Color(0x000080));
+          idx++;
+        }
+      }
+      instancedMesh.instanceMatrix.needsUpdate = true;
+      if (instancedMesh.instanceColor) instancedMesh.instanceColor.needsUpdate = true;
+
+      // Render Loop
+      function animateThree() {
+        requestAnimationFrame(animateThree);
+        controls.update();
+        renderer.render(scene, camera);
+      }
+      animateThree();
+
+      window.addEventListener('resize', onResize);
+    }
+
+    function onResize() {
+      const container = document.getElementById('threeContainer');
+      if (!container || !renderer) return;
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+      renderer.setSize(width, height);
+      draw2DPRPD();
+      drawScope();
+    }
+
+    function reset3DCamera() {
+      camera.position.set(40, 48, 55);
+      controls.target.set(0, 0, 0);
+      controls.update();
+    }
+
+    function drawScope() {
+      const w = scopeCanvas.width = scopeCanvas.clientWidth * (window.devicePixelRatio || 1);
+      const h = scopeCanvas.height = scopeCanvas.clientHeight * (window.devicePixelRatio || 1);
+      scopeCtx.resetTransform();
+      scopeCtx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+
+      const width = scopeCanvas.clientWidth;
+      const height = scopeCanvas.clientHeight;
+      const midY = height / 2;
+
+      scopeCtx.fillStyle = '#020617';
+      scopeCtx.fillRect(0, 0, width, height);
+
+      // Grid Lines
+      scopeCtx.strokeStyle = '#1e293b';
+      scopeCtx.lineWidth = 1;
+      scopeCtx.beginPath();
+      for (let x = 0; x <= width; x += width / 8) {
+        scopeCtx.moveTo(x, 0);
+        scopeCtx.lineTo(x, height);
+      }
+      scopeCtx.moveTo(0, midY);
+      scopeCtx.lineTo(width, midY);
+      scopeCtx.stroke();
+
+      // Continuous 50Hz Voltage Sinusoid (Amber)
+      scopeCtx.beginPath();
+      scopeCtx.strokeStyle = '#eab308';
+      scopeCtx.lineWidth = 2;
+      for (let px = 0; px <= width; px += 2) {
+        const rad = (px / width) * Math.PI * 2;
+        const py = midY - Math.sin(rad) * (height * 0.38);
+        if (px === 0) scopeCtx.moveTo(px, py);
+        else scopeCtx.lineTo(px, py);
+      }
+      scopeCtx.stroke();
+
+      // Current Scanning Phase Marker Line
+      const scanX = (currentPhaseAngle / 360) * width;
+      scopeCtx.strokeStyle = 'rgba(56, 189, 248, 0.8)';
+      scopeCtx.lineWidth = 1.5;
+      scopeCtx.setLineDash([4, 4]);
+      scopeCtx.beginPath();
+      scopeCtx.moveTo(scanX, 0);
+      scopeCtx.lineTo(scanX, height);
+      scopeCtx.stroke();
+      scopeCtx.setLineDash([]);
+
+      // Draw recent discharge impulse spikes on the scope
+      const now = Date.now();
+      for (let i = scopePulseQueue.length - 1; i >= 0; i--) {
+        const p = scopePulseQueue[i];
+        const age = now - p.time;
+        if (age > 1800) {
+          scopePulseQueue.splice(i, 1);
+          continue;
+        }
+
+        const px = (p.phase / 360) * width;
+        const normH = Math.min(1, p.charge / MAX_CHARGE_PC) * (height * 0.45);
+        const alpha = Math.max(0, 1 - age / 1800);
+
+        scopeCtx.strokeStyle = `rgba(56, 189, 248, ${alpha})`;
+        scopeCtx.lineWidth = 2.5;
+        scopeCtx.beginPath();
+        scopeCtx.moveTo(px, midY);
+        // Current impulse spike
+        scopeCtx.lineTo(px, midY - normH);
+        scopeCtx.stroke();
+
+        // Tip circle
+        scopeCtx.fillStyle = `rgba(244, 63, 94, ${alpha})`;
+        scopeCtx.beginPath();
+        scopeCtx.arc(px, midY - normH, 2.5, 0, Math.PI * 2);
+        scopeCtx.fill();
+      }
+    }
+
+    function draw2DPRPD() {
+      const dpr = window.devicePixelRatio || 1;
+      prpd2dCanvas.width = prpd2dCanvas.clientWidth * dpr;
+      prpd2dCanvas.height = prpd2dCanvas.clientHeight * dpr;
+      prpd2dCtx.resetTransform();
+      prpd2dCtx.scale(dpr, dpr);
+
+      const w = prpd2dCanvas.clientWidth;
+      const h = prpd2dCanvas.clientHeight;
+      const margin = { top: 15, right: 48, bottom: 28, left: 45 };
+      const plotW = w - margin.left - margin.right;
+      const plotH = h - margin.top - margin.bottom;
+
+      // Dark background
+      prpd2dCtx.fillStyle = '#020617';
+      prpd2dCtx.fillRect(0, 0, w, h);
+
+      // Plot grid lines
+      prpd2dCtx.strokeStyle = '#1e293b';
+      prpd2dCtx.lineWidth = 1;
+
+      // X grid (0, 90, 180, 270, 360)
+      prpd2dCtx.font = '9px "JetBrains Mono", monospace';
+      prpd2dCtx.textAlign = 'center';
+      prpd2dCtx.fillStyle = '#64748b';
+
+      for (let deg = 0; deg <= 360; deg += 45) {
+        const gx = margin.left + (deg / 360) * plotW;
+        prpd2dCtx.beginPath();
+        prpd2dCtx.moveTo(gx, margin.top);
+        prpd2dCtx.lineTo(gx, margin.top + plotH);
+        prpd2dCtx.stroke();
+        prpd2dCtx.fillText(`${deg}°`, gx, margin.top + plotH + 14);
+      }
+      prpd2dCtx.fillText("Phase Angle (\u03C6)", margin.left + plotW / 2, margin.top + plotH + 25);
+
+      // Y grid
+      prpd2dCtx.textAlign = 'right';
+      for (let qVal = 0; qVal <= MAX_CHARGE_PC; qVal += 100) {
+        const gy = margin.top + plotH - (qVal / MAX_CHARGE_PC) * plotH;
+        prpd2dCtx.beginPath();
+        prpd2dCtx.moveTo(margin.left, gy);
+        prpd2dCtx.lineTo(margin.left + plotW, gy);
+        prpd2dCtx.stroke();
+        prpd2dCtx.fillText(`${qVal}pC`, margin.left - 6, gy + 3);
+      }
+
+      // Faint AC voltage waveform reference (dashed sine)
+      prpd2dCtx.beginPath();
+      prpd2dCtx.strokeStyle = 'rgba(234, 179, 8, 0.28)';
+      prpd2dCtx.lineWidth = 1.5;
+      prpd2dCtx.setLineDash([4, 4]);
+      for (let px = 0; px <= plotW; px += 2) {
+        const rad = (px / plotW) * Math.PI * 2;
+        const py = margin.top + plotH / 2 - Math.sin(rad) * (plotH * 0.4);
+        if (px === 0) prpd2dCtx.moveTo(margin.left + px, py);
+        else prpd2dCtx.lineTo(margin.left + px, py);
+      }
+      prpd2dCtx.stroke();
+      prpd2dCtx.setLineDash([]);
+
+      // Draw accumulated 2D Bins with Jet Colormap
+      const binW = plotW / PHASE_BINS;
+      const binH = plotH / CHARGE_BINS;
+
+      for (let p = 0; p < PHASE_BINS; p++) {
+        for (let q = 0; q < CHARGE_BINS; q++) {
+          const count = histogramGrid[p][q];
+          if (count <= 0) continue;
+
+          // Normalized color factor (1 to maxBinCount)
+          const norm = Math.min(1, count / Math.max(10, maxBinCount));
+          const col = getJetColor(norm);
+
+          prpd2dCtx.fillStyle = col.css;
+          const bx = margin.left + p * binW;
+          const by = margin.top + plotH - (q + 1) * binH;
+          prpd2dCtx.fillRect(bx, by, binW + 0.5, binH + 0.5);
+        }
+      }
+
+      // Update max colorbar label
+      document.getElementById('jet-legend-max').innerText = `${Math.max(10, maxBinCount)}`;
+    }
+
+    function update3DMesh() {
+      if (!instancedMesh) return;
+      let idx = 0;
+      const phaseSpan = 40;
+      const chargeSpan = 40;
+      const maxHeight = 16;
+
+      for (let p = 0; p < PHASE_BINS; p++) {
+        for (let q = 0; q < CHARGE_BINS; q++) {
+          const count = histogramGrid[p][q];
+          const posX = ((p / PHASE_BINS) - 0.5) * phaseSpan;
+          const posZ = ((q / CHARGE_BINS) - 0.5) * chargeSpan;
+
+          if (count > 0) {
+            const norm = Math.min(1, count / Math.max(10, maxBinCount));
+            const col = getJetColor(norm);
+            const height = Math.max(0.2, norm * maxHeight);
+
+            dummy.position.set(posX, 0, posZ);
+            dummy.scale.set(1, height, 1);
+            dummy.updateMatrix();
+            instancedMesh.setMatrixAt(idx, dummy.matrix);
+
+            tempColor.setRGB(col.r / 255, col.g / 255, col.b / 255);
+            instancedMesh.setColorAt(idx, tempColor);
+          } else {
+            dummy.position.set(posX, 0, posZ);
+            dummy.scale.set(1, 0.001, 1);
+            dummy.updateMatrix();
+            instancedMesh.setMatrixAt(idx, dummy.matrix);
+          }
+          idx++;
+        }
+      }
+
+      instancedMesh.instanceMatrix.needsUpdate = true;
+      if (instancedMesh.instanceColor) {
+        instancedMesh.instanceColor.needsUpdate = true;
+      }
+    }
+
+    function dispatchPulse(pulse) {
+      totalPulseCount++;
+      document.getElementById('stat-total-pulses').innerText = totalPulseCount.toLocaleString();
+
+      // Scope queue
+      scopePulseQueue.push({
+        phase: pulse.phase,
+        charge: pulse.charge,
+        time: Date.now()
+      });
+
+      // Map into bin indices
+      const pBin = Math.min(PHASE_BINS - 1, Math.floor((pulse.phase / 360) * PHASE_BINS));
+      const qBin = Math.min(CHARGE_BINS - 1, Math.floor((pulse.charge / MAX_CHARGE_PC) * CHARGE_BINS));
+
+      histogramGrid[pBin][qBin]++;
+      if (histogramGrid[pBin][qBin] > maxBinCount) {
+        maxBinCount = histogramGrid[pBin][qBin];
+      }
+
+      // Update Live Telemetry
+      document.getElementById('telem-phase').innerText = `${pulse.phase.toFixed(1)}°`;
+      document.getElementById('telem-charge').innerText = `${pulse.charge.toFixed(0)} pC`;
+      
+      const updatedCount = histogramGrid[pBin][qBin];
+      const jetCol = getJetColor(Math.min(1, updatedCount / Math.max(10, maxBinCount)));
+      
+      document.getElementById('telem-explanation').innerHTML = `
+        Pulse fired at <strong>&phi; = ${pulse.phase.toFixed(1)}&deg;</strong> with magnitude <strong>${pulse.charge.toFixed(0)} pC</strong>.<br>
+        &bull; Mapped into bin [${pBin}, ${qBin}].<br>
+        &bull; Local count <strong>n = ${updatedCount}</strong>.<br>
+        &bull; Color shifted to <span style="color:${jetCol.css}; font-weight:bold;">Jet Step</span>.
+      `;
+    }
+
+    function runSimulationStep() {
+      // Advance phase by step
+      const phaseDelta = simSpeed * 4.5;
+      currentPhaseAngle = (currentPhaseAngle + phaseDelta) % 360;
+
+      if (currentPhaseAngle < phaseDelta) {
+        currentCycle++;
+        document.getElementById('scope-cycle-num').innerText = currentCycle;
+      }
+      document.getElementById('scope-curr-phase').innerText = `${currentPhaseAngle.toFixed(1)}°`;
+
+      // Probabilistically trigger discharges based on current phase and defect model
+      for (let i = 0; i < Math.max(1, Math.floor(simSpeed / 2)); i++) {
+        const candidate = sampleDefectPulse(currentDefect);
+        // Only fire if the candidate phase is near the current sweep phase window
+        const diff = Math.abs(candidate.phase - currentPhaseAngle);
+        if (diff < 16 || diff > 344) {
+          dispatchPulse(candidate);
+        }
+      }
+
+      drawScope();
+      draw2DPRPD();
+      update3DMesh();
+
+      if (isPlaying) {
+        animationReqId = requestAnimationFrame(runSimulationStep);
+      }
+    }
+
+    function togglePlayPause() {
+      isPlaying = !isPlaying;
+      const btn = document.getElementById('btn-play');
+      const text = document.getElementById('play-text');
+
+      if (isPlaying) {
+        btn.classList.remove('bg-sky-600', 'hover:bg-sky-500');
+        btn.classList.add('bg-rose-600', 'hover:bg-rose-500');
+        text.innerText = 'Pause';
+        document.getElementById('play-icon').setAttribute('data-lucide', 'pause');
+        lucide.createIcons();
+        runSimulationStep();
+      } else {
+        btn.classList.remove('bg-rose-600', 'hover:bg-rose-500');
+        btn.classList.add('bg-sky-600', 'hover:bg-sky-500');
+        text.innerText = 'Resume';
+        document.getElementById('play-icon').setAttribute('data-lucide', 'play');
+        lucide.createIcons();
+        cancelAnimationFrame(animationReqId);
+      }
+    }
+
+    function stepSinglePulse() {
+      if (isPlaying) togglePlayPause();
+      const p = sampleDefectPulse(currentDefect);
+      currentPhaseAngle = p.phase;
+      document.getElementById('scope-curr-phase').innerText = `${currentPhaseAngle.toFixed(1)}°`;
+      dispatchPulse(p);
+      drawScope();
+      draw2DPRPD();
+      update3DMesh();
+    }
+
+    function stepSingleCycle() {
+      if (isPlaying) togglePlayPause();
+      currentCycle++;
+      document.getElementById('scope-cycle-num').innerText = currentCycle;
+      
+      // Inject ~30 pulses characteristic of one 20ms cycle
+      for (let i = 0; i < 28; i++) {
+        dispatchPulse(sampleDefectPulse(currentDefect));
+      }
+      drawScope();
+      draw2DPRPD();
+      update3DMesh();
+    }
+
+    function resetSimulation() {
+      if (isPlaying) togglePlayPause();
+      totalPulseCount = 0;
+      currentCycle = 1;
+      currentPhaseAngle = 0;
+      maxBinCount = 1;
+      scopePulseQueue.length = 0;
+
+      for (let p = 0; p < PHASE_BINS; p++) {
+        histogramGrid[p].fill(0);
+      }
+
+      document.getElementById('stat-total-pulses').innerText = '0';
+      document.getElementById('scope-cycle-num').innerText = '1';
+      document.getElementById('scope-curr-phase').innerText = '0.0°';
+      document.getElementById('telem-phase').innerText = '-- °';
+      document.getElementById('telem-charge').innerText = '-- pC';
+      document.getElementById('telem-explanation').innerText = 'Simulation reset. Ready for next test.';
+
+      drawScope();
+      draw2DPRPD();
+      update3DMesh();
+    }
+
+    function setSpeed(spd) {
+      simSpeed = spd;
+      const btns = [1, 5, 25];
+      btns.forEach(b => {
+        const el = document.getElementById(`spd-${b}`);
+        if (b === spd) {
+          el.className = 'px-2 py-1 rounded bg-sky-600 text-white font-bold';
+        } else {
+          el.className = 'px-2 py-1 rounded bg-slate-800 text-slate-300 hover:bg-slate-700';
+        }
+      });
+    }
+
+    function changeDefect(type) {
+      currentDefect = type;
+      const title = document.getElementById('defect-title');
+      const desc = document.getElementById('defect-desc');
+
+      if (type === 'void') {
+        title.innerHTML = '<i data-lucide="book-open" class="w-4 h-4 text-amber-400"></i> Cavity Void Defect Physics';
+        desc.innerText = 'Trapped gas cavities in solid dielectric discharge in 1st & 3rd quadrants (~30°-90° and ~210°-270°) around peak rates of voltage change (du/dt), producing symmetrical rabbit-ear patterns.';
+      } else if (type === 'corona') {
+        title.innerHTML = '<i data-lucide="book-open" class="w-4 h-4 text-rose-400"></i> Corona In Air Physics';
+        desc.innerText = 'Sharp metallic points ionizing ambient gas. Characterized by dense, highly repetitive Trichel pulses tightly bundled around the negative voltage peak (270°).';
+      } else if (type === 'surface') {
+        title.innerHTML = '<i data-lucide="book-open" class="w-4 h-4 text-emerald-400"></i> Surface Discharge Physics';
+        desc.innerText = 'Tracking across insulation interfaces. Discharges ignite near zero-crossings and extend past voltage crests with wide charge amplitude dispersion.';
+      }
+      lucide.createIcons();
+      resetSimulation();
+    }
+
+    function toggleHelpModal() {
+      const el = document.getElementById('helpModal');
+      el.classList.toggle('hidden');
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+      initThreeJS();
+      drawScope();
+      draw2DPRPD();
+    });
+  </script>
+</body>
+</html>
